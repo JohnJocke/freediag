@@ -1,0 +1,10 @@
+# L0 devices to configure:
+# Any of these may be commented out before running make
+
+sileng
+muleng
+vwtool
+dumb
+br
+elm
+sim

@@ -1,0 +1,124 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html">
+  <title>Freediag - Vehicle Diagnostic Suite</title>
+  <link href="style.css" type="text/css" rel="stylesheet">
+</head>
+
+<body>
+
+  <div class="title">FREEDIAG</div>
+
+  <div class="subtitle">The OSI 7 Layer Model and FreeDiag.</div> 
+
+  <br><br>
+
+  <div align="center">
+    <img src="title.png">
+    <br>
+    [ <a href="http://www.sourceforge.net/projects/freediag/"> Freediag@Sourcefo
+rge </a> ]
+    [ <a href="index.html"> Home </a> ]
+    [ <a href="Scantool-Manual.html"> Documentation </a> ]
+    <br>
+    [ <a href="http://sourceforge.net/forum/?group_id=34714"> Message Boards </a
+> ]
+    [ <a href="http://sourceforge.net/mail/?group_id=34714"> Mailing Lists </a>
+]
+    [ <a href="http://sourceforge.net/cvs/?group_id=34714"> CVS Access </a> ]
+  </div>
+
+  <br>
+
+<center><H1>freediag and OSI Layers</H1></center>
+<p>If you don't know for sure what the "OSI Layers" are, you can google "OSI layers" and read around, because most OSs and comms systems use it in some form or another.
+<p>I would say that layers 1 and 2 are universally present and recognisable in all information systems - from layer 3 up, things get more blurred and dificult to distinguish. There is always a Layer 7 (the Application), which (in a poorer design) may implement some of the features of lower layers...
+<p>
+<H4>As a quick example, take your common Web browsing (HTML over HTTP over TCP/IP over Ethernet):</H4>
+<ul>
+<li>Layer 1 (PHY) - From Physics to Bit Streams - Plugs, Cables, Voltages, Currents, Timings - all defined by Ethernet (ISO802.something);
+<li>Layer 2 (LNK) - From Bits to Packets - Framing, Handshaking, Error Control, Addressing (MAC) - also defined by Ethernet;
+<li>Layer 3 (NET) - From Packets to Paths - Packet Ordering, Switching, Routing, Bridging, etc. - defined by IP;
+<li>Layer 4 (TRN) - From Paths to Hosts - End-to-End Delivery with Error Control (across several networks, possibly multicast) - defined by IP;
+<li>Layer 5 (SES) - From Hosts to Sessions - Session establishment/identification/termination between hosts - defined by TCP;
+<li>Layer 6 (PRE) - From Sessions to Presentations - Interpreting the data that comes through - defined by HTTP;
+<li>Layer 7 (APP) - From Presentation to Applications - Usage of the data presented by the comm. channel - HTML Browser.
+<p><p>This is by no means authoritary - just a nice example, which probably has a few minor errors. But it gets the picture done :).
+</ul>
+<p>
+Please note that what one layer considers to be a Packet, another layer may see as just part of a Packet - TCP/IP Datagrams can span more than one Ethernet Packet, and an FTP file can be much larger than a TCP/IP datagram.... it depends on the size of each layer's packets.
+<p>
+<H4>Now let's look at OBD2/freediag layers.</H4>
+<p>
+Our little project is not at all simple, because it tries to deal with a lot of different physical interfaces, which can implement different sets of features. The more expensive ones ("active" or "smart") have their own "intelligence" and therefore can implement features from one, two, or more OSI layers...
+<p> Not only that, but this project also aims higher than the simpler OBD applications: it tries to convert the simple Tester/ECU link into a full-blown network stack, with multiple interface connections and protocol sessions simultaneously on the same tester machine (the PC).
+<p>
+ The only way to explain each layer separately and completely, is to describe the code for those interfaces I call the "passive" ones ("dumb", or without processors). Their very simple hardware is easilly classified as Layer 1 (all they do is change voltages and currents, because cars use 12V ports, and laptops use 5V ports (mostly), and you don't want car spikes to fry your laptop ports), and this means they don't do any processing of the data coming through. So this kind of interface has to use 100% of the L1 code in freediag.
+<p>
+But extrapolating for the "smart" interfaces is easy: they do by hardware(HW) some of the stuff we otherwise do by software(SW), and that's why each interface driver implementation file (diag_l0_*.c) will state which features the interface HW implements on its own. From there, all the protocol layers above it can access those flags and choose between actually executing each protocol feature, or expecting/requesting the interface to do it automatically. That's the difference between "smart" and "dumb" in freediag... ;)  This has a number of impacts on the code, like the execution of message framing and timeouts - some "smart" interfaces will handle them automatically (and therefore take longer to respond), so freediag can't apply the strict protocol timing parameters when talking to them - hence there are "relaxed" timeouts for talking to "smart" interfaces.
+<p>
+(Personally, I don't like "active" or "smart" interfaces because only their manufacturers can fully support them, and we depend on their good will and information to implement their drivers. But I have to admit they come in handy for most people because they take care of the <i>icky</i> details of slow initialization, checksums, timeouts, etc.)
+<p>
+<p>I would expect to find a one-to-one correspondence between OSI layers and the freediag layers (diag_l0_*, diag_l1_*, diag_l3_*, etc.). Unfortunately, I don't think this is the case.... For starters, OSI layers begin counting from 1, and freediag counts from 0... (professional hazard amongst the C coders, I think...;). Anyway, the original authors took some degree of liberty while naming all the stuff they managed into the code. I don't blame them, it IS a confusing task to homogeneise different interfaces from different manufacturers, and different protocols from ISO and SAE, and wanting to build over that... And the OSI layers can be quite tiresome, too...
+<p>
+Looking at freediag specifically (this is what I THINK - so correct me if I'm wrong):
+<ul>
+  <li><B>Layer 1 (PHY)</B> - Composed by:
+  <ul>
+    <li> Hardware: OBD2 plug + Passive or Smart Interface + PC Serial Port (usually 16550 controller chip); We don't use its electrical handshaking capabilities (except to power some smart interfaces through DTR/RTS ;)
+    <li> Software(low): Serial Port device driver - recognizes 7/8-bit "packets" known as bytes or characters ;). There is no addressing (Peer-2-Peer). We don't use its error control capabilities (parity bits); freediag's hook into the serial port is <B>"diag_tty.c"</B>.
+    <li>Software(high): The <B>"diag_l0_*.c"</B> interface driver files contain functions that emulate timings and behaviours that should normally be implemented in HW;
+  </ul>
+  <p>
+  <li><B>Layer 2 (LNK)</B> - Composed by more than one freediag layer.
+  <ul>
+         The <B>"diag_l1.c"</B> file manages:
+    <li> Physical interface addresses (for more than one interface/port on the same machine, like Ethernet's MAC addresses);
+    <li> Physical interface flags (device capabilities, like Ethernet NIC parameters);
+    <li> Validation of half-duplex transmission with echo (on passive interfaces);
+    <li> Inter-Byte gap timing (removed for smart interfaces, applied for passive interfaces);
+  </ul>
+  <p> 
+  <ul>
+         The <B>"diag_l2.c"</B> file manages (with help from the "diag_l2_*.c" files):
+    <li> Transparent calls to all the supported link protocols.
+    <li> Associations between link protocols and interface devices;
+    <li> Link protocol specific timeouts and delays;
+    <li> Framing: Building of link protocol messages from interface packets - i.e., joining lose bytes into a full diagnostic telegram;
+    <li> Validation of message Headers and CRC/Checksum;
+    <li> Addressing (to distinguish between different ECUs in the car network);
+  </ul>
+  <p>
+  <ul>
+         The different <B>"diag_l2_*.c"</B> files implement:
+    <li> Official International Standard Protocols: "_iso9141.c" (the father of OBD) / "_iso14230.c" (a.k.a. "Keyword Protocol 2000") / "_saej1850.c" (an all-american favorite) / "_can.c" (Controller Area Network - not yet used for OBD; just inside the car network itself);
+    <li> Extra "proprietary protocols": /"_raw.c" (a debug pass-through?) / "_vag.c" (for Volkwagen/Audi) / "_mb1.c" (for Mercedes gearbox or something).
+  </ul>
+  <p>
+  <li> <B>Layer 3 (NET)</B> - Unlike the TCP/IP protocol suite, the ISO-9141, ISO-14230, and SAE-J1850 protocols do not define this layer.
+  <p>
+  <li> <B>Layer 4 (TRN)</B> - Unlike the TCP/IP protocol suite, the ISO-9141, ISO-14230, and SAE-J1850 protocols do not define this layer.
+  <p>
+  <li> <B>Layer 5 (SES)</B> - Session initiation/termination. Although ISO/SAE state that this layer is not defined by their standards for the OBD applications, I think that's not true... they define it in their docs, alright, but as part of Layer 2 - the link protocol session. The car ECUs normally require a specific initialization to start a communication session, and then "keepalive" packets may be required to maintain it open. To end the session, it may be needed a timeout or a specific message. This session control is implemented in <B>"diag_l3.c"</B>, where it is started, stopped, and checked for timeouts. The protocol timeout checks are triggered by an OS timer that is configured in "diag_os.c", and the timeout behaviour is defined by the specific "diag_l3_*.c" files.
+  <p>
+  <li> <B>Layer 6 (PRE)</B> - Data interpretation/presentation. Again, ISO/SAE state that they don't define this layer... I think they do define it, they just bundle it up in Layer 7 (APP). This knowledge about the valid message payload contents is stored by the <b>"diag_l3_*.c"</b> files. Unfortunately, in freediag, this knowledge is yet incomplete and somewhat garbled... but with a little work, we'll sort it out.
+  <ul>
+    <li> "_saej1979.c": Presentation of the message data like a SAE-J1979 Scantool diagnostic application (the official OBD2 standard); This file is still a little "attached" to SAE-J1850, by virtue of one of the original authors... but it also covers the iso9141 part, which is common to all protocols.
+    <li> "_iso14230.c": Presentation of the message data like a KWP2000 (ISO-14230) Scantool (minus iso9141 part);
+    <li> "_vag.c": same thing, but for the VAGtool application suite - and clearly incomplete;
+  </ul>
+  <p>
+  <li> <B>Layer 7 (APP)</B> - Finally, we get to the application level - the SAE-J1979 Diagnostic ScanTool. It is implemented in the files:
+  <ul>
+    <li> <b>"scantool_cli.c"</b>: command line interface with general application flow, auxiliary data conversion, pretty formatting, etc; 
+    <li> <b>"scantool.c"</b>: main program code, with full OBD2 response decoders and J1979 Scantool application implementation (auto-discovery of OBD2 in car);
+    <li> <b>"diag_dtc.c"</b>: Diagnostic Trouble Code interpretation;
+    <li> and the remaining <b>"scantool_*.c"</b> files, which implement a few other commands we can issue inside the application.
+  </ul>
+  <p>
+</ul>
+<p> I hope I'm helping people understand the code, and not confusing them further! :) 
+<br> For further enlightenment, read the CVS source code!
+<p>
+vnevoa.
+
